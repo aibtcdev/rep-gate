@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "node --test test/compute-score.test.ts"
   },
   "dependencies": {
     "hono": "^4.0.0"
@@ -11,5 +12,6 @@
   "devDependencies": {
     "wrangler": "^3.0.0",
     "@cloudflare/workers-types": "^4.0.0"
-  }
+  },
+  "type": "module"
 }

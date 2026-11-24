@@ -7,6 +7,9 @@ app.use('*', cors())
 // ── Tier definitions ──────────────────────────────────────────
 // Each tier gates what an agent can do in the ecosystem.
 // Score = composite of check-ins, board activity, ratings, on-chain rep.
+// NOTE: minScore is calibrated to the WEIGHTED composite (max 33.5), not
+// the unweighted sum of components (max 160). The cutoffs preserve the
+// original fractions of the max: ~6% / 25% / 47% / 75%.
 
 interface Tier {
   name: string
@@ -19,7 +22,7 @@ interface Tier {
   description: string
 }
 
-const TIERS: Tier[] = [
+export const TIERS: Tier[] = [
   {
     name: 'Observer',
     minScore: 0,
@@ -32,7 +35,7 @@ const TIERS: Tier[] = [
   },
   {
     name: 'Newcomer',
-    minScore: 10,
+    minScore: 2,
     maxBountyValue: 5000,
     canPostBounties: false,
     canAudit: false,
@@ -42,7 +45,7 @@ const TIERS: Tier[] = [
   },
   {
     name: 'Builder',
-    minScore: 40,
+    minScore: 8,
     maxBountyValue: 25000,
     canPostBounties: true,
     canAudit: false,
@@ -52,7 +55,7 @@ const TIERS: Tier[] = [
   },
   {
     name: 'Trusted',
-    minScore: 75,
+    minScore: 16,
     maxBountyValue: 100000,
     canPostBounties: true,
     canAudit: true,
@@ -62,7 +65,7 @@ const TIERS: Tier[] = [
   },
   {
     name: 'Core',
-    minScore: 120,
+    minScore: 25,
     maxBountyValue: -1, // unlimited
     canPostBounties: true,
     canAudit: true,
@@ -85,7 +88,7 @@ const WEIGHTS = {
 
 // ── Score computation ─────────────────────────────────────────
 
-interface AgentData {
+export interface AgentData {
   btcAddress: string
   stxAddress?: string
   displayName: string
@@ -102,7 +105,7 @@ interface AgentData {
   onChainFeedbackCount: number
 }
 
-function computeScore(agent: AgentData): { total: number; breakdown: Record<string, number> } {
+export function computeScore(agent: AgentData): { total: number; breakdown: Record<string, number> } {
   // Check-ins: log scale, cap at 30 pts
   // 100 check-ins = 15 pts, 500 = 20 pts, 1000 = 22 pts, 3000 = 26 pts
   const checkInPts = agent.checkIns > 0
@@ -140,22 +143,25 @@ function computeScore(agent: AgentData): { total: number; breakdown: Record<stri
      levelPts * WEIGHTS.level) * 10  // scale up for readability
   ) / 10
 
-  // Raw total (sum of all components, unweighted, for display)
-  const rawTotal = Math.round((checkInPts + boardPts + ratingPts + repPts + levelPts) * 10) / 10
-
+  // The score is the weighted composite: each factor contributes its points
+  // times its weight (max 33.5). The unweighted sum must NOT be returned:
+  // it ignores WEIGHTS entirely, so e.g. an agent with 100 check-ins and
+  // nothing else scored 17.4 (Newcomer, may claim bounties) when the
+  // documented composite is 2.6 (Observer, may claim nothing).
+  // Tier thresholds are calibrated to this weighted scale (see TIERS).
   return {
-    total: rawTotal,
+    total,
     breakdown: {
-      checkIns: Math.round(checkInPts * 10) / 10,
-      boardActivity: Math.round(boardPts * 10) / 10,
-      ratingsReceived: Math.round(ratingPts * 10) / 10,
-      reputationFeedback: Math.round(repPts * 10) / 10,
-      level: Math.round(levelPts * 10) / 10
+      checkIns: Math.round(checkInPts * WEIGHTS.checkIns * 10) / 10,
+      boardActivity: Math.round(boardPts * WEIGHTS.boardActivity * 10) / 10,
+      ratingsReceived: Math.round(ratingPts * WEIGHTS.ratingsReceived * 10) / 10,
+      reputationFeedback: Math.round(repPts * WEIGHTS.reputationFeedback * 10) / 10,
+      level: Math.round(levelPts * WEIGHTS.level * 10) / 10
     }
   }
 }
 
-function getTier(score: number): Tier {
+export function getTier(score: number): Tier {
   let tier = TIERS[0]
   for (const t of TIERS) {
     if (score >= t.minScore) tier = t
